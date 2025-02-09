@@ -18,12 +18,19 @@ Some statistics are listed as follows:
 |user-item pairs |		204987 |
 
 DATA FILES
+
 citations.dat	citations between articles
+
 item-tag.dat	tags corresponding to articles, one line corresponds to tags of one article (note that this is the version prior to preprocess thus would have more tags than used in the paper)
+
 mult.dat		bag of words for each article
+
 raw-data.csv	raw data
+
 tags.dat		tags, sorted by tag-id's
+
 users.dat		rating matrix (user-item matrix)
+
 vocabulary.dat	corresponding words for file mult.dat
 
 ## Data Format
