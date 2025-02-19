@@ -22,6 +22,28 @@ warm_xing_train = warm_xing.sample(frac=0.8, random_state=1234)
 warm_xing_valid_test = warm_xing.drop(warm_xing_train.index)
 warm_xing_valid = warm_xing_valid_test.sample(frac=0.5, random_state=1234)
 warm_xing_test = warm_xing_valid_test.drop(warm_xing_valid.index)
+print(len(warm_xing_train))
+
+warm_xing_user_set = set(warm_xing_train['user'])
+idx_to_move = warm_xing_valid[True ^ warm_xing_valid['user'].isin(warm_xing_user_set)].index
+warm_xing_train = pd.concat([warm_xing_train, warm_xing_valid.loc[idx_to_move]])
+warm_xing_valid.drop(idx_to_move)
+print(len(warm_xing_train))
+warm_xing_item_set = set(warm_xing_train['item'])
+idx_to_move = warm_xing_valid[True ^ warm_xing_valid['item'].isin(warm_xing_item_set)].index
+warm_xing_train = pd.concat([warm_xing_train, warm_xing_valid.loc[idx_to_move]])
+warm_xing_valid.drop(idx_to_move)
+print(len(warm_xing_train))
+warm_xing_user_set = set(warm_xing_train['user'])
+idx_to_move = warm_xing_test[True ^ warm_xing_test['user'].isin(warm_xing_user_set)].index
+warm_xing_train = pd.concat([warm_xing_train, warm_xing_test.loc[idx_to_move]])
+warm_xing_test.drop(idx_to_move)
+print(len(warm_xing_train))
+warm_xing_item_set = set(warm_xing_train['item'])
+idx_to_move = warm_xing_test[True ^ warm_xing_test['item'].isin(warm_xing_item_set)].index
+warm_xing_train = pd.concat([warm_xing_train, warm_xing_test.loc[idx_to_move]])
+warm_xing_test.drop(idx_to_move)
+print(len(warm_xing_train))
 warm_xing_train.reset_index(inplace=True, drop=True)
 warm_xing_valid.reset_index(inplace=True, drop=True)
 warm_xing_test.reset_index(inplace=True, drop=True)
@@ -52,6 +74,27 @@ warm_cite_train = warm_cite.sample(frac=0.8)
 warm_cite_valid_test = warm_cite.drop(warm_cite_train.index)
 warm_cite_valid = warm_cite_valid_test.sample(frac=0.5)
 warm_cite_test = warm_cite_valid_test.drop(warm_cite_valid.index)
+
+warm_cite_user_set = set(warm_cite_train['user'])
+idx_to_move = warm_cite_valid[True ^ warm_cite_valid['user'].isin(warm_cite_user_set)].index
+warm_cite_train = pd.concat([warm_cite_train, warm_cite_valid.loc[idx_to_move]])
+warm_cite_valid.drop(idx_to_move)
+
+warm_cite_item_set = set(warm_cite_train['item'])
+idx_to_move = warm_cite_valid[True ^ warm_cite_valid['item'].isin(warm_cite_item_set)].index
+warm_cite_train = pd.concat([warm_cite_train, warm_cite_valid.loc[idx_to_move]])
+warm_cite_valid.drop(idx_to_move)
+
+warm_cite_user_set = set(warm_cite_train['user'])
+idx_to_move = warm_cite_test[True ^ warm_cite_test['user'].isin(warm_cite_user_set)].index
+warm_cite_train = pd.concat([warm_cite_train, warm_cite_test.loc[idx_to_move]])
+warm_cite_test.drop(idx_to_move)
+
+warm_cite_item_set = set(warm_cite_train['item'])
+idx_to_move = warm_cite_test[True ^ warm_cite_test['user'].isin(warm_cite_item_set)].index
+warm_cite_train = pd.concat([warm_cite_train, warm_cite_test.loc[idx_to_move]])
+warm_cite_test.drop(idx_to_move)
+
 warm_cite_train.reset_index(inplace=True, drop=True)
 warm_cite_valid.reset_index(inplace=True, drop=True)
 warm_cite_test.reset_index(inplace=True, drop=True)

@@ -7,7 +7,7 @@ import numpy as np
 
 
 class BPRDataset(torch.utils.data.Dataset):
-    def __init__(self, features, num_item, train_mat=None, num_ng=0, is_train=None):
+    def __init__(self, features, num_item, train_mat=None, num_ng=1, is_train=None):
         super(BPRDataset, self).__init__()
         self.features = features
         self.num_item = num_item
@@ -84,4 +84,26 @@ def load_data(dataset):
 
 
 if __name__ == '__main__':
-    pass
+    warm_xing_train, warm_xing_valid, warm_xing_test = load_data('xing')
+    xing_mat = convert('xing', warm_xing_train)
+    xing_train_dataset = BPRDataset(features=xing_mat, num_item=20519, train_mat=xing_mat, num_ng=10, is_train=True)
+    xing_train_dataset_loader = torch.utils.data.DataLoader(xing_train_dataset, batch_size=1024, shuffle=True)
+    reg = 0.001
+    lr = 0.01
+    model = bpr(106881, 20519, 2738)
+    model.cuda()
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=0.001)
+    for i in range(50):
+        model.train()
+        xing_train_dataset_loader.dataset.ng_sample()
+        for user, item_i, item_j in xing_train_dataset_loader:
+            user = user.cuda()
+            item_i = item_i.cuda()
+            item_j = item_j.cuda()
+            pred_i, pred_j = model(user, item_i, item_j)
+            model.zero_grad()
+            loss = -((pred_i - pred_j).sigmoid().log().sum() + 0.001*(model.U.weight.norm()+model.I.weight.norm())).cpu()
+            loss.backward()
+            optimizer.step()
+
+
