@@ -134,7 +134,7 @@ if __name__ == '__main__':
             item_j = item_j.cuda()
             pred_i, pred_j = model(user, item_i, item_j)
             model.zero_grad()
-            loss = -((pred_i - pred_j).sigmoid().log().sum()) + 0.001*(model.U.weight.norm()+model.I.weight.norm()).cpu()
+            loss = -((pred_i - pred_j).sigmoid().log().sum() + 0.001*(model.U.weight.norm()+model.I.weight.norm())).cpu()
             loss_value = loss.cpu().item()
             loss.backward()
             optimizer.step()
