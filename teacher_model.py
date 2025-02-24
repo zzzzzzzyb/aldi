@@ -7,7 +7,7 @@ import numpy as np
 import time
 
 class BPRDataset(torch.utils.data.Dataset):
-    def __init__(self, features, num_item, train_mat=None, num_ng=1, is_train=None):
+    def __init__(self, features, num_item, train_mat=None, num_ng=2, is_train=None):
         super(BPRDataset, self).__init__()
         self.features = features
         self.num_item = num_item
@@ -18,25 +18,14 @@ class BPRDataset(torch.utils.data.Dataset):
     def ng_sample(self):
         assert self.is_train, 'testing'
         self.features_fill = []
-        # user = 0
-        # for x in self.features:
-        #     i = np.random.randint(self.num_item)
-        #     while x[i] != 1:
-        #         i = np.random.randint(self.num_item)
-        #     for t in range(self.num_ng):
-        #         j = np.random.randint(self.num_item)
-        #         while x[j] == 1:
-        #             j = np.random.randint(self.num_item)
-        #         self.features_fill.append([user, i, j])
-        #     user += 1
         u_i_group = self.features.groupby('user')
         for user in self.features['user'].tolist():
-            pos_items = u_i_group.get_group(user).tolist()
+            pos_items = u_i_group.get_group(user)['item'].tolist()
             for pos_item in pos_items:
                 for t in range(self.num_ng):
                     j = np.random.randint(self.num_ng)
-                    while j in pos_item:
-                        j = np.random.randint(self.num_ng)
+                    while j in pos_items:
+                        j = np.random.randint(self.num_item)
                     self.features_fill.append([user, pos_item, j])
 
 
@@ -96,6 +85,7 @@ def load_data(dataset):
 def metrics(model, data):
     items = torch.tensor(list(set(data['item'])))
     item_embedding = model.I(items.cuda()).cuda()
+    u_i_group = data.groupby('user')
     def batch_iterate(df, batch_size):
         for start in range(0, len(df), batch_size):
             yield df.iloc[start:start + batch_size]
@@ -114,12 +104,12 @@ def metrics(model, data):
                 recall_dict[user_item.iloc[i]['user']] = tmp
     recall = []
     ndcg = []
-    for lsts in recall_dict.values():
-        recall.append(len(lsts))
+    for user, lsts in recall_dict.items():
+        recall.append(len(lsts) / len(u_i_group.get_group(user)))
         idcg = np.reciprocal(np.log2(np.arange(len(lsts)).astype(float)+2)).sum()
         dcg = np.reciprocal(np.log2(np.array(lsts, dtype=float) + 2)).sum()
         ndcg.append(dcg / idcg)
-    return np.mean(recall) / 20, np.mean(ndcg)
+    return np.mean(recall), np.mean(ndcg)
 
 
 if __name__ == '__main__':
@@ -133,7 +123,6 @@ if __name__ == '__main__':
     model = bpr(106881, 20519, 1024)
     model.cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=0.001)
-
     for i in range(epochs):
         t1 = time.time()
         model.train()
@@ -157,4 +146,4 @@ if __name__ == '__main__':
     recall, ndcg = metrics(model, warm_xing_test)
     print(f"Recall: {recall}, NDCG: {ndcg}")
 
-
+    torch.save(model.state_dict(), 'bpr.pth')
