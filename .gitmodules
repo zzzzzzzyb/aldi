@@ -1,0 +1,6 @@
+[submodule "LightGCN-PyTorch"]
+	path = LightGCN-PyTorch
+	url = git@github.com:gusye1234/LightGCN-PyTorch.git
+[submodule "PyTorch_NGCF"]
+	path = PyTorch_NGCF
+	url = git@github.com:liu-jc/PyTorch_NGCF.git
