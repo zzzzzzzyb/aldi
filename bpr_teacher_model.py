@@ -151,4 +151,4 @@ if __name__ == '__main__':
     recall, ndcg = metrics(model, warm_xing_test)
     print(f"Recall: {recall}, NDCG: {ndcg}")
 
-    torch.save(model.state_dict(), 'bpr.pth')
+    torch.save(model.state_dict(), 'model/bpr.pth')

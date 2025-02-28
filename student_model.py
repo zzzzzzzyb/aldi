@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import time
 
-from teacher_model import bpr
+from bpr_teacher_model import bpr
 
 
 class ALDIDataset(torch.utils.data.Dataset):
@@ -76,11 +76,7 @@ class student_model(nn.Module):
         user = self.user_mlp(user)
 
         content_i = self.content_mlp(content_i)
-        # print('content_i', content_i)
         content_j = self.content_mlp(content_j)
-        # print('content_j', content_j)
-        # print('pred_i', user * content_i, (user * content_i).shape)
-        # print('pred_j', user * content_j, (user * content_j).shape)
         pred_i = (user * content_i).sum(dim=-1)
         pred_j = (user * content_j).sum(dim=-1)
         return pred_i, pred_j
@@ -124,88 +120,93 @@ def metrics(model, data, content):
     return np.mean(recall), np.mean(ndcg)
 
 
-teacher = bpr(106881, 20519, 1024)
-state_dict = torch.load('bpr.pth', weights_only=True)
-teacher.load_state_dict(state_dict)
-teacher.cuda()
-teacher.eval()
+if __name__ == '__main__':
 
-xing_content = np.load('data/XING/XING/item_raw_content.npy')
-cold_xing_valid = pd.read_csv('data/processed/cold_xing_valid.csv')
-cold_xing_test = pd.read_csv('data/processed/cold_xing_test.csv')
-warm_xing_train = pd.read_csv('data/processed/warm_xing_train.csv')
-warm_xing_valid = pd.read_csv('data/processed/warm_xing_valid.csv')
-warm_xing_test = pd.read_csv('data/processed/warm_xing_test.csv')
+    xing_content = np.load('data/XING/XING/item_raw_content.npy')
+    cold_xing_valid = pd.read_csv('data/processed/cold_xing_valid.csv')
+    cold_xing_test = pd.read_csv('data/processed/cold_xing_test.csv')
+    warm_xing_train = pd.read_csv('data/processed/warm_xing_train.csv')
+    warm_xing_valid = pd.read_csv('data/processed/warm_xing_valid.csv')
+    warm_xing_test = pd.read_csv('data/processed/warm_xing_test.csv')
 
-dataset_train = ALDIDataset(features=warm_xing_train, num_item=20519, train_mat=None, num_ng=1,
-                            is_train=True, item_content=xing_content)
-loader = torch.utils.data.DataLoader(dataset=dataset_train, batch_size=8192, shuffle=True)
-lr = 0.001
-wd = 0.001
-epochs = 60
-reg = 0.001
-omega = -4
-student = student_model(num_users=106881, embedding_dim=1024)
-student.cuda()
-student.U.weight.data.copy_(teacher.U.weight.data)
-optimizer = torch.optim.SGD(student.parameters(), lr=lr, weight_decay=wd)
-i_u_group = warm_xing_train.groupby('item')
-i_map_u = [0] * 20519
-for i in list(i_u_group.groups.keys()):
-    i_map_u[i] = len(i_u_group.get_group(i))
-N = np.sum(i_map_u) / 16415
-paras = student.user_mlp[0].weight
-for i in range(epochs):
-    student.train()
-    optimizer.zero_grad()
-    t1 = time.time()
-    loss_value = []
-    loader.dataset.ng_sample()
-    for user, item_i, item_j, content_i, content_j in loader:
-        user = user.cuda()
-        item_i = item_i.cuda()
-        item_j = item_j.cuda()
-        content_i = content_i.cuda()
-        content_j = content_j.cuda()
-        teacher_pred_i, teacher_pred_j = teacher(user, item_i, item_j)
-        student_pred_i, student_pred_j = student(user, content_i, content_j)
-        N_i = torch.tensor(i_map_u)[item_i.cpu().tolist()]
-        ratio = N_i / N
-        w = 2 * np.reciprocal(1 + np.exp(omega * ratio)) - 1
-        w = w.cuda()
+
+    teacher = bpr(106881, 20519, 1024)
+    state_dict = torch.load('model/bpr.pth', weights_only=True)
+    teacher.load_state_dict(state_dict)
+    teacher.cuda()
+    teacher.eval()
+
+
+
+    dataset_train = ALDIDataset(features=warm_xing_train, num_item=20519, train_mat=None, num_ng=1,
+                                is_train=True, item_content=xing_content)
+    loader = torch.utils.data.DataLoader(dataset=dataset_train, batch_size=8192, shuffle=True)
+    lr = 0.001
+    wd = 0.001
+    epochs = 60
+    reg = 0.001
+    omega = -4
+    student = student_model(num_users=106881, embedding_dim=1024)
+    student.cuda()
+    student.U.weight.data.copy_(teacher.U.weight.data)
+    optimizer = torch.optim.SGD(student.parameters(), lr=lr, weight_decay=wd)
+    i_u_group = warm_xing_train.groupby('item')
+    i_map_u = [0] * 20519
+    for i in list(i_u_group.groups.keys()):
+        i_map_u[i] = len(i_u_group.get_group(i))
+    N = np.sum(i_map_u) / 16415
+    paras = student.user_mlp[0].weight
+    for i in range(epochs):
+        student.train()
+        optimizer.zero_grad()
+        t1 = time.time()
+        loss_value = []
+        loader.dataset.ng_sample()
+        for user, item_i, item_j, content_i, content_j in loader:
+            user = user.cuda()
+            item_i = item_i.cuda()
+            item_j = item_j.cuda()
+            content_i = content_i.cuda()
+            content_j = content_j.cuda()
+            teacher_pred_i, teacher_pred_j = teacher(user, item_i, item_j)
+            student_pred_i, student_pred_j = student(user, content_i, content_j)
+            N_i = torch.tensor(i_map_u)[item_i.cpu().tolist()]
+            ratio = N_i / N
+            w = 2 * np.reciprocal(1 + np.exp(omega * ratio)) - 1
+            w = w.cuda()
+            with torch.no_grad():
+                item_i = teacher.I(item_i).cuda()
+                item_j = teacher.I(item_j).cuda()
+
+            ct1 = nn.LogSigmoid()
+            loss1 = -ct1(student_pred_i - student_pred_j).mean()
+
+            loss2 = (teacher_pred_i - student_pred_i).abs().mean() + (teacher_pred_j - student_pred_j).abs().mean()
+
+            para1 = (teacher_pred_i - teacher_pred_j)
+            para2 = (student_pred_i - student_pred_j)
+            ct = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=w)
+            loss3 = ct(para1, para2.sigmoid())
+
+            t_dist_j = item_j.mean(dim=0)
+            t_dist_i = (item_i * (item_i - t_dist_j)).sum(dim=-1)
+            s_dist_j = student.content_mlp(content_j).mean(dim=0)
+            map_i = student.content_mlp(content_i)
+            s_dist_i = (map_i * (map_i - s_dist_j)).sum(dim=-1) * 0.98
+            criterion = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=w)
+            loss4 = criterion(t_dist_i, s_dist_i.sigmoid())
+
+            # print(loss1, loss2, loss3, loss4)
+            loss = loss1 + loss2 + loss3 + loss4
+            loss.backward()
+            loss_value.append(loss.item())
+            optimizer.step()
         with torch.no_grad():
-            item_i = teacher.I(item_i).cuda()
-            item_j = teacher.I(item_j).cuda()
+            student.eval()
+            recall, ndcg = metrics(student, cold_xing_valid, xing_content)
+        print(f"Epoch: {i}, Recall: {recall}, NDCG: {ndcg}, Loss: {np.mean(loss_value)}, Time: {time.time() - t1:.2f}")
 
-        ct1 = nn.LogSigmoid()
-        loss1 = -ct1(student_pred_i - student_pred_j).mean()
+    recall, ndcg = metrics(student, cold_xing_test, xing_content)
+    print(f"Recall: {recall}, NDCG: {ndcg}")
 
-        loss2 = (teacher_pred_i - student_pred_i).abs().mean() + (teacher_pred_j - student_pred_j).abs().mean()
-
-        para1 = (teacher_pred_i - teacher_pred_j)
-        para2 = (student_pred_i - student_pred_j)
-        ct = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=w)
-        loss3 = ct(para1, para2.sigmoid())
-
-        t_dist_j = item_j.mean(dim=0)
-        t_dist_i = (item_i * (item_i - t_dist_j)).sum(dim=-1)
-        s_dist_j = student.content_mlp(content_j).mean(dim=0)
-        map_i = student.content_mlp(content_i)
-        s_dist_i = (map_i * (map_i - s_dist_j)).sum(dim=-1) * 0.98
-        criterion = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=w)
-        loss4 = criterion(t_dist_i, s_dist_i.sigmoid())
-
-        # print(loss1, loss2, loss3, loss4)
-        loss = loss1 + loss2 + loss3 + loss4
-        loss.backward()
-        loss_value.append(loss.item())
-        optimizer.step()
-    with torch.no_grad():
-        student.eval()
-        recall, ndcg = metrics(student, cold_xing_valid, xing_content)
-    print(f"Epoch: {i}, Recall: {recall}, NDCG: {ndcg}, Loss: {np.mean(loss_value)}, Time: {time.time() - t1:.2f}")
-
-recall, ndcg = metrics(student, cold_xing_test, xing_content)
-print(f"Recall: {recall}, NDCG: {ndcg}")
-
-torch.save(student.state_dict(), 'student_bpr.pth')
+    torch.save(student.state_dict(), 'model/student_bpr.pth')
