@@ -104,6 +104,7 @@ def metrics(model, data):
                 tmp = recall_dict.get(user_item.iloc[i]['user'], [])
                 tmp.append(pred_items[i].index(user_item.iloc[i]['item']))
                 recall_dict[user_item.iloc[i]['user']] = tmp
+
     recall = []
     ndcg = []
     for user, lsts in recall_dict.items():
