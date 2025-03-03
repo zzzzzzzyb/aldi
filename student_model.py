@@ -4,7 +4,12 @@ import torch
 import torch.nn as nn
 import time
 
+from parser import parser
 from bpr_teacher_model import bpr
+from LightGCN_PyTorch.code.ALDILoader import ALDIDataLoader
+from LightGCN_PyTorch.code.model import LightGCN
+
+args = parser()
 
 
 class ALDIDataset(torch.utils.data.Dataset):
@@ -155,11 +160,16 @@ def load_dataset(name):
 
 
 if __name__ == '__main__':
-    dataset = 'cite'
+    dataset = args.dataset
+    backbone = args.backbone
     cold_valid, cold_test, warm_train, warm_valid, warm_test, item_content = load_dataset(dataset)
     num_users = 5551 if dataset == 'cite' else 106881
     num_items = 16980 if dataset == 'cite' else 20519
-    teacher = bpr(num_users, num_items, 1024)
+    if backbone == "bpr":
+        teacher = bpr(num_users, num_items, 1024)
+    elif backbone == "lightgcn":
+
+        teacher = LightGCN()
     state_dict = torch.load(f'model/bpr_{dataset}.pth', weights_only=True)
     teacher.load_state_dict(state_dict)
     teacher.cuda()
@@ -181,7 +191,7 @@ if __name__ == '__main__':
     i_map_u = [0] * num_items
     for i in list(i_u_group.groups.keys()):
         i_map_u[i] = len(i_u_group.get_group(i))
-    N = np.sum(i_map_u) / round(0.2*num_items)
+    N = np.sum(i_map_u) / round(0.2 * num_items)
     for i in range(epochs):
         student.train()
         optimizer.zero_grad()
