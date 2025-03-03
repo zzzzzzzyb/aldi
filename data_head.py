@@ -53,7 +53,13 @@ import pandas as pd
 # idcg = np.reciprocal(np.log2(np.arange(len(lsts)).astype(float)+2)).sum()
 # dcg = np.reciprocal(np.log2(np.array(lsts, dtype=float) + 2)).sum()
 # print(idcg)
-# df = pd.read_csv('data/processed/warm_xing_valid.csv')
+df = pd.read_csv('data/processed/warm_xing_valid.csv')
+a = df.groupby('user')
+for user, group in a:
+    print(int(user))
+    print(group)
+    print(type(group['item'].tolist()[0]))
+    break
 # for i in df.itertuples():
 #     print(i.user)
 #     break
@@ -73,14 +79,14 @@ import pandas as pd
 #
 # print(dict[['A', 'B']])
 # print(np.mean(list(dict.values())))
-import torch
-# #
-a = torch.tensor([[1,2,3,4],
-                  [5,6,7,8],
-                  [9,10,11,12]], dtype=torch.float)
-b = torch.tensor([[2,3,4,5],
-                  [6,7,8,9],
-                  [10,11,12,13]], dtype=torch.float)
+# import torch
+# # #
+# a = torch.tensor([[1,2,3,4],
+#                   [5,6,7,8],
+#                   [9,10,11,12]], dtype=torch.float)
+# b = torch.tensor([[2,3,4,5],
+#                   [6,7,8,9],
+#                   [10,11,12,13]], dtype=torch.float)
 # print(torch.nn.functional.pairwise_distance(a,b).shape)
 
 # print(len(a))
@@ -97,5 +103,5 @@ b = torch.tensor([[2,3,4,5],
 # y.backward()
 # print(y.grad)
 
-state_dict = torch.load("model/bpr.pth")
-print(state_dict)
+# state_dict = torch.load("model/bpr_xing.pth")
+# print(state_dict)

@@ -4,10 +4,14 @@ import model
 import utils
 from pprint import pprint
 
+import ALDILoader
+
 if world.dataset in ['gowalla', 'yelp2018', 'amazon-book']:
     dataset = dataloader.Loader(path="../data/"+world.dataset)
 elif world.dataset == 'lastfm':
     dataset = dataloader.LastFM()
+elif world.dataset == 'xing' or world.dataset == 'cite':
+    dataset = ALDILoader.ALDIDataLoader(dataset=world.dataset)
 
 print('===========config================')
 pprint(world.config)

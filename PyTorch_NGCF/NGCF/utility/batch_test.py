@@ -1,6 +1,6 @@
-import utility.metrics as metrics
-from utility.parser import parse_args
-from utility.load_data import *
+import metrics as metrics
+from parser import parse_args
+from load_data import *
 import multiprocessing
 import heapq
 import torch

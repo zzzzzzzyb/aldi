@@ -8,13 +8,13 @@ import time
 
 
 class BPRDataset(torch.utils.data.Dataset):
-    def __init__(self, features, num_item, train_mat=None, num_ng=2, is_train=None):
+    def __init__(self, features, num_item, dataset=None, num_ng=2, is_train=None):
         super(BPRDataset, self).__init__()
         self.features = features
         self.num_item = num_item
         self.is_train = is_train
-        self.train_mat = train_mat
         self.num_ng = num_ng
+        self.dataset = dataset
 
     def ng_sample(self):
         assert self.is_train, 'testing'
@@ -39,15 +39,6 @@ class BPRDataset(torch.utils.data.Dataset):
         item_j = features[index][2]
         return user, item_i, item_j
 
-
-def convert(dataset, data: pd.DataFrame):
-    if dataset == 'cite':
-        res = torch.zeros(5551, 16980)
-    elif dataset == 'xing':
-        res = torch.zeros(106881, 20519)
-    for line in data.itertuples():
-        res[line.user][line.item] = 1
-    return res
 
 
 class bpr(nn.Module):
@@ -116,15 +107,17 @@ def metrics(model, data):
 
 
 if __name__ == '__main__':
-    warm_xing_train, warm_xing_valid, warm_xing_test = load_data('xing')
-    xing_mat = convert('xing', warm_xing_train)
-    xing_train_dataset = BPRDataset(features=warm_xing_train, num_item=20519, train_mat=xing_mat, num_ng=1,
+    dataset = 'cite'
+    warm_train, warm_valid, warm_test = load_data(dataset)
+    num_users = 5551 if dataset == 'cite' else 106881
+    num_items = 16980 if dataset == 'cite' else 20519
+    xing_train_dataset = BPRDataset(features=warm_train, num_item=num_items, dataset=dataset, num_ng=1,
                                     is_train=True)
     xing_train_dataset_loader = torch.utils.data.DataLoader(xing_train_dataset, batch_size=8192, shuffle=True)
     reg = 0.001
     lr = 0.002
     epochs = 30
-    model = bpr(106881, 20519, 1024)
+    model = bpr(num_users, num_items, 1024)
     model.cuda()
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=0.001)
     for i in range(epochs):
@@ -145,10 +138,10 @@ if __name__ == '__main__':
             optimizer.step()
         with torch.no_grad():
             model.eval()
-            recall, ndcg = metrics(model, warm_xing_valid)
+            recall, ndcg = metrics(model, warm_valid)
         print(f"Epoch: {i}, Recall: {recall}, NDCG: {ndcg}, Loss: {loss_value}, Time: {time.time() - t1:.2f}")
 
-    recall, ndcg = metrics(model, warm_xing_test)
+    recall, ndcg = metrics(model, warm_test)
     print(f"Recall: {recall}, NDCG: {ndcg}")
 
-    torch.save(model.state_dict(), 'model/bpr.pth')
+    torch.save(model.state_dict(), f'model/bpr_{dataset}.pth')

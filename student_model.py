@@ -8,12 +8,12 @@ from bpr_teacher_model import bpr
 
 
 class ALDIDataset(torch.utils.data.Dataset):
-    def __init__(self, features, num_item, train_mat=None, num_ng=2, is_train=None, item_content=None):
+    def __init__(self, features, num_item, dataset=None, num_ng=2, is_train=None, item_content=None):
         super(ALDIDataset, self).__init__()
         self.features = features
         self.num_item = num_item
         self.is_train = is_train
-        self.train_mat = train_mat
+        self.dataset = dataset
         self.num_ng = num_ng
         self.item_content = item_content
 
@@ -44,21 +44,36 @@ class ALDIDataset(torch.utils.data.Dataset):
 
 
 class student_model(nn.Module):
-    def __init__(self, num_users, embedding_dim):
+    def __init__(self, num_users, embedding_dim, dataset):
         super(student_model, self).__init__()
         self.U = nn.Embedding(num_users, embedding_dim)
-        self.user_mlp = nn.Sequential(
-            nn.Linear(1024, 512),
-            nn.Sigmoid(),
-            nn.Linear(512, 256),
-            # nn.Sigmoid(),
-        )
-        self.content_mlp = nn.Sequential(
-            nn.Linear(2738, 1024),
-            nn.Sigmoid(),
-            nn.Linear(1024, 256),
-            # nn.Sigmoid(),
-        )
+        self.dataset = dataset
+        if self.dataset == 'xing':
+            self.content_mlp = nn.Sequential(
+                nn.Linear(2738, 1024),
+                nn.Sigmoid(),
+                nn.Linear(1024, 256),
+                # nn.Sigmoid(),
+            )
+            self.user_mlp = nn.Sequential(
+                nn.Linear(1024, 512),
+                nn.Sigmoid(),
+                nn.Linear(512, 256),
+                # nn.Sigmoid(),
+            )
+        else:
+            self.content_mlp = nn.Sequential(
+                nn.Linear(300, 150),
+                nn.Sigmoid(),
+                nn.Linear(150, 100),
+                # nn.Sigmoid(),
+            )
+            self.user_mlp = nn.Sequential(
+                nn.Linear(1024, 256),
+                nn.Sigmoid(),
+                nn.Linear(256, 100),
+                # nn.Sigmoid(),
+            )
 
         def init_param(m):
             if type(m) == nn.Linear:
@@ -120,42 +135,53 @@ def metrics(model, data, content):
     return np.mean(recall), np.mean(ndcg)
 
 
+def load_dataset(name):
+    if name == 'cite':
+        cold_valid = pd.read_csv('data/processed/cold_cite_valid.csv')
+        cold_test = pd.read_csv('data/processed/cold_cite_test.csv')
+        warm_train = pd.read_csv('data/processed/warm_cite_train.csv')
+        warm_valid = pd.read_csv('data/processed/warm_cite_valid.csv')
+        warm_test = pd.read_csv('data/processed/warm_cite_test.csv')
+        item_content = np.load('data/citeulike-a/CiteULike_item_content.npy')
+        return cold_valid, cold_test, warm_train, warm_valid, warm_test, item_content
+    elif name == 'xing':
+        cold_valid = pd.read_csv('data/processed/cold_xing_valid.csv')
+        cold_test = pd.read_csv('data/processed/cold_xing_test.csv')
+        warm_train = pd.read_csv('data/processed/warm_xing_train.csv')
+        warm_valid = pd.read_csv('data/processed/warm_xing_valid.csv')
+        warm_test = pd.read_csv('data/processed/warm_xing_test.csv')
+        item_content = np.load('data/XING/XING/item_raw_content.npy')
+        return cold_valid, cold_test, warm_train, warm_valid, warm_test, item_content
+
+
 if __name__ == '__main__':
-
-    xing_content = np.load('data/XING/XING/item_raw_content.npy')
-    cold_xing_valid = pd.read_csv('data/processed/cold_xing_valid.csv')
-    cold_xing_test = pd.read_csv('data/processed/cold_xing_test.csv')
-    warm_xing_train = pd.read_csv('data/processed/warm_xing_train.csv')
-    warm_xing_valid = pd.read_csv('data/processed/warm_xing_valid.csv')
-    warm_xing_test = pd.read_csv('data/processed/warm_xing_test.csv')
-
-
-    teacher = bpr(106881, 20519, 1024)
-    state_dict = torch.load('model/bpr.pth', weights_only=True)
+    dataset = 'cite'
+    cold_valid, cold_test, warm_train, warm_valid, warm_test, item_content = load_dataset(dataset)
+    num_users = 5551 if dataset == 'cite' else 106881
+    num_items = 16980 if dataset == 'cite' else 20519
+    teacher = bpr(num_users, num_items, 1024)
+    state_dict = torch.load(f'model/bpr_{dataset}.pth', weights_only=True)
     teacher.load_state_dict(state_dict)
     teacher.cuda()
     teacher.eval()
 
-
-
-    dataset_train = ALDIDataset(features=warm_xing_train, num_item=20519, train_mat=None, num_ng=1,
-                                is_train=True, item_content=xing_content)
+    dataset_train = ALDIDataset(features=warm_train, num_item=num_items, dataset=dataset, num_ng=1,
+                                is_train=True, item_content=item_content)
     loader = torch.utils.data.DataLoader(dataset=dataset_train, batch_size=8192, shuffle=True)
     lr = 0.001
     wd = 0.001
     epochs = 60
     reg = 0.001
     omega = -4
-    student = student_model(num_users=106881, embedding_dim=1024)
+    student = student_model(num_users=num_users, embedding_dim=1024, dataset=dataset)
     student.cuda()
     student.U.weight.data.copy_(teacher.U.weight.data)
     optimizer = torch.optim.SGD(student.parameters(), lr=lr, weight_decay=wd)
-    i_u_group = warm_xing_train.groupby('item')
-    i_map_u = [0] * 20519
+    i_u_group = warm_train.groupby('item')
+    i_map_u = [0] * num_items
     for i in list(i_u_group.groups.keys()):
         i_map_u[i] = len(i_u_group.get_group(i))
-    N = np.sum(i_map_u) / 16415
-    paras = student.user_mlp[0].weight
+    N = np.sum(i_map_u) / round(0.2*num_items)
     for i in range(epochs):
         student.train()
         optimizer.zero_grad()
@@ -203,10 +229,10 @@ if __name__ == '__main__':
             optimizer.step()
         with torch.no_grad():
             student.eval()
-            recall, ndcg = metrics(student, cold_xing_valid, xing_content)
+            recall, ndcg = metrics(student, cold_valid, item_content)
         print(f"Epoch: {i}, Recall: {recall}, NDCG: {ndcg}, Loss: {np.mean(loss_value)}, Time: {time.time() - t1:.2f}")
 
-    recall, ndcg = metrics(student, cold_xing_test, xing_content)
+    recall, ndcg = metrics(student, cold_test, item_content)
     print(f"Recall: {recall}, NDCG: {ndcg}")
 
-    torch.save(student.state_dict(), 'model/student_bpr.pth')
+    torch.save(student.state_dict(), f'model/student_bpr_{dataset}.pth')
