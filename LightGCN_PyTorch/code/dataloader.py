@@ -16,8 +16,8 @@ import pandas as pd
 from torch.utils.data import Dataset, DataLoader
 from scipy.sparse import csr_matrix
 import scipy.sparse as sp
-import world
-from world import cprint
+from LightGCN_PyTorch.code import world
+from LightGCN_PyTorch.code.world import cprint
 from time import time
 
 class BasicDataset(Dataset):

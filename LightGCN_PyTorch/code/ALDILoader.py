@@ -1,5 +1,6 @@
-import world
-from dataloader import BasicDataset
+import LightGCN_PyTorch.code.world
+from LightGCN_PyTorch.code import world
+from LightGCN_PyTorch.code.dataloader import BasicDataset
 import pandas as pd
 import numpy as np
 import torch
@@ -10,8 +11,8 @@ from time import time
 class ALDIDataLoader(BasicDataset):
     def __init__(self, dataset, config=world.config):
         self.path = './path'
-        warm_train_file = f'../../data/processed/warm_{dataset}_train.csv'
-        warm_test_file = f'../../data/processed/warm_{dataset}_test.csv'
+        warm_train_file = fr'C:\zzzzzyb\course_files\fyp\aldi\data\processed\warm_{dataset}_train.csv'
+        warm_test_file = fr'C:\zzzzzyb\course_files\fyp\aldi\data\processed\warm_{dataset}_train.csv'
         print("init dataset")
         self.split = config['A_split']
         self.folds = config['A_n_fold']
@@ -137,7 +138,7 @@ class ALDIDataLoader(BasicDataset):
                 norm_adj = norm_adj.tocsr()
                 end = time()
                 print(f"costing {end - s}s, saved norm_mat...")
-                sp.save_npz(self.path + '/s_pre_adj_mat.npz', norm_adj)
+                sp.save_npz('./s_pre_adj_mat.npz', norm_adj)
 
             if self.split == True:
                 self.Graph = self._split_A_hat(norm_adj)

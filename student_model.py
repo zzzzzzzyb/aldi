@@ -3,13 +3,16 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import time
+import scipy.sparse as sp
 
-from parser import parser
+from parse import parser
+
+args = parser()
 from bpr_teacher_model import bpr
 from LightGCN_PyTorch.code.ALDILoader import ALDIDataLoader
 from LightGCN_PyTorch.code.model import LightGCN
-
-args = parser()
+from PyTorch_NGCF.NGCF.Models import NGCF
+from PyTorch_NGCF.NGCF.utility.load_data import Data
 
 
 class ALDIDataset(torch.utils.data.Dataset):
@@ -55,28 +58,28 @@ class student_model(nn.Module):
         self.dataset = dataset
         if self.dataset == 'xing':
             self.content_mlp = nn.Sequential(
-                nn.Linear(2738, 1024),
+                nn.Linear(2738, 512),
                 nn.Sigmoid(),
-                nn.Linear(1024, 256),
+                nn.Linear(512, embedding_dim // 4),
                 # nn.Sigmoid(),
             )
             self.user_mlp = nn.Sequential(
-                nn.Linear(1024, 512),
+                nn.Linear(embedding_dim, embedding_dim // 2),
                 nn.Sigmoid(),
-                nn.Linear(512, 256),
+                nn.Linear(embedding_dim // 2, embedding_dim // 4),
                 # nn.Sigmoid(),
             )
         else:
             self.content_mlp = nn.Sequential(
                 nn.Linear(300, 150),
                 nn.Sigmoid(),
-                nn.Linear(150, 100),
+                nn.Linear(150, embedding_dim // 4),
                 # nn.Sigmoid(),
             )
             self.user_mlp = nn.Sequential(
-                nn.Linear(1024, 256),
+                nn.Linear(embedding_dim, embedding_dim // 2),
                 nn.Sigmoid(),
-                nn.Linear(256, 100),
+                nn.Linear(embedding_dim // 2, embedding_dim // 4),
                 # nn.Sigmoid(),
             )
 
@@ -159,33 +162,74 @@ def load_dataset(name):
         return cold_valid, cold_test, warm_train, warm_valid, warm_test, item_content
 
 
+def sparse_mx_to_torch_sparse_tensor(sparse_mx):
+    """Convert a scipy sparse matrix to a torch sparse tensor."""
+    sparse_mx = sparse_mx.tocoo().astype(np.float32)
+    indices = torch.from_numpy(
+        np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
+    values = torch.from_numpy(sparse_mx.data)
+    shape = torch.Size(sparse_mx.shape)
+    return torch.sparse.FloatTensor(indices, values, shape)
+
+
 if __name__ == '__main__':
     dataset = args.dataset
     backbone = args.backbone
+    recdim = args.recdim
     cold_valid, cold_test, warm_train, warm_valid, warm_test, item_content = load_dataset(dataset)
     num_users = 5551 if dataset == 'cite' else 106881
     num_items = 16980 if dataset == 'cite' else 20519
     if backbone == "bpr":
         teacher = bpr(num_users, num_items, 1024)
+        state_dict = torch.load(f'model/bpr_{dataset}.pth', weights_only=True)
+        teacher.load_state_dict(state_dict)
+        teacher.cuda()
+        teacher.eval()
+        student = student_model(num_users=num_users, embedding_dim=1024, dataset=dataset)
+        student.cuda()
+        student.U.weight.data.copy_(teacher.U.weight.data)
     elif backbone == "lightgcn":
-
-        teacher = LightGCN()
-    state_dict = torch.load(f'model/bpr_{dataset}.pth', weights_only=True)
-    teacher.load_state_dict(state_dict)
-    teacher.cuda()
-    teacher.eval()
+        config = {}
+        config['A_split'] = False
+        config['A_n_fold'] = 100
+        config['latent_dim_rec'] = 64
+        config['lightGCN_n_layers'] = 3
+        config['keep_prob'] = 0.6
+        config['pretrain'] = 0
+        config['dropout'] = 0
+        LightGCNDataset = ALDIDataLoader(dataset=dataset, config=config)
+        teacher = LightGCN(dataset=LightGCNDataset, config=config)
+        state_dict = torch.load(f'model/lightgcn_{dataset}.pth', weights_only=True)
+        teacher.load_state_dict(state_dict)
+        teacher.cuda()
+        teacher.eval()
+        student = student_model(num_users=num_users, embedding_dim=recdim, dataset=dataset)
+        student.cuda()
+        student.U.weight.data.copy_(teacher.embedding_user.weight.data)
+    elif backbone == "ngcf":
+        data_generator = Data(path=args.dataset, batch_size=8192)
+        plain_adj, norm_adj, mean_adj = data_generator.get_adj_mat()
+        adj = norm_adj
+        adj = sparse_mx_to_torch_sparse_tensor(adj).float().cuda()
+        weight_size = [64, 64, 64]
+        mess_dropout = [0.1, 0.1, 0.1]
+        teacher = NGCF(data_generator.n_users, data_generator.n_items, 64, weight_size, mess_dropout)
+        state_dict = torch.load(f'model/ngcf_{dataset}', weights_only=True)
+        teacher.load_state_dict(state_dict)
+        teacher.cuda()
+        teacher.eval()
+        student = student_model(num_users=num_users, embedding_dim=recdim, dataset=dataset)
+        student.cuda()
+        student.U.weight.data.copy_(teacher.user_embedding.weight.data)
 
     dataset_train = ALDIDataset(features=warm_train, num_item=num_items, dataset=dataset, num_ng=1,
                                 is_train=True, item_content=item_content)
     loader = torch.utils.data.DataLoader(dataset=dataset_train, batch_size=8192, shuffle=True)
     lr = 0.001
     wd = 0.001
-    epochs = 60
+    epochs = 150
     reg = 0.001
     omega = -4
-    student = student_model(num_users=num_users, embedding_dim=1024, dataset=dataset)
-    student.cuda()
-    student.U.weight.data.copy_(teacher.U.weight.data)
     optimizer = torch.optim.SGD(student.parameters(), lr=lr, weight_decay=wd)
     i_u_group = warm_train.groupby('item')
     i_map_u = [0] * num_items
@@ -204,15 +248,33 @@ if __name__ == '__main__':
             item_j = item_j.cuda()
             content_i = content_i.cuda()
             content_j = content_j.cuda()
-            teacher_pred_i, teacher_pred_j = teacher(user, item_i, item_j)
+            if backbone == "bpr":
+                teacher_pred_i, teacher_pred_j = teacher(user, item_i, item_j)
+            elif backbone == "lightgcn":
+                teacher_pred_i = teacher(user, item_i)
+                teacher_pred_j = teacher(user, item_j)
+            elif backbone == "ngcf":
+                ua_embeddings, ia_embeddings = teacher(adj)
+                user_embeddings = ua_embeddings[user]
+                item_i_embedding = ia_embeddings[item_i]
+                item_j_embedding = ia_embeddings[item_j]
+                teacher_pred_i = (user_embeddings * item_i_embedding).sum(dim=-1)
+                teacher_pred_j = (user_embeddings * item_j_embedding).sum(dim=-1)
             student_pred_i, student_pred_j = student(user, content_i, content_j)
             N_i = torch.tensor(i_map_u)[item_i.cpu().tolist()]
             ratio = N_i / N
             w = 2 * np.reciprocal(1 + np.exp(omega * ratio)) - 1
             w = w.cuda()
             with torch.no_grad():
-                item_i = teacher.I(item_i).cuda()
-                item_j = teacher.I(item_j).cuda()
+                if type(teacher) == LightGCN:
+                    item_i = teacher.embedding_item(item_i).cuda()
+                    item_j = teacher.embedding_item(item_j).cuda()
+                elif type(teacher) == bpr:
+                    item_i = teacher.I(item_i).cuda()
+                    item_j = teacher.I(item_j).cuda()
+                elif type(teacher) == NGCF:
+                    item_i = teacher.item_embedding(item_i).cuda()
+                    item_j = teacher.item_embedding(item_j).cuda()
 
             ct1 = nn.LogSigmoid()
             loss1 = -ct1(student_pred_i - student_pred_j).mean()
@@ -245,4 +307,4 @@ if __name__ == '__main__':
     recall, ndcg = metrics(student, cold_test, item_content)
     print(f"Recall: {recall}, NDCG: {ndcg}")
 
-    torch.save(student.state_dict(), f'model/student_bpr_{dataset}.pth')
+    torch.save(student.state_dict(), f'model/student_{backbone}_{dataset}.pth')

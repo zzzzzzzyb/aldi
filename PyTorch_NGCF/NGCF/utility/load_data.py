@@ -12,11 +12,17 @@ from time import time
 
 class Data(object):
     def __init__(self, path, batch_size):
+        if "xing" in path:
+            self.dataset = "xing"
+            path = r"C:\zzzzzyb\course_files\fyp\aldi\data\NGCF_PATH"
+        elif "cite" in path:
+            self.dataset = "cite"
+            path = r"C:\zzzzzyb\course_files\fyp\aldi\data\NGCF_PATH"
         self.path = path
         self.batch_size = batch_size
 
-        train_file = path + '/train.txt'
-        test_file = path + '/test.txt'
+        train_file = path + f'/warm_{self.dataset}_train.txt'
+        test_file = path + f'/warm_{self.dataset}_test.txt'
 
         #get number of users and items
         self.n_users, self.n_items = 0, 0
