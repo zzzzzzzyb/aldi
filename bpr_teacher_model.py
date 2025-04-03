@@ -24,7 +24,7 @@ class BPRDataset(torch.utils.data.Dataset):
             pos_items = u_i_group.get_group(user)['item'].tolist()
             for pos_item in pos_items:
                 for t in range(self.num_ng):
-                    j = np.random.randint(self.num_ng)
+                    j = np.random.randint(self.num_item)
                     while j in pos_items:
                         j = np.random.randint(self.num_item)
                     self.features_fill.append([user, pos_item, j])
@@ -47,8 +47,8 @@ class bpr(nn.Module):
         self.U = nn.Embedding(num_users, dimension)
         self.I = nn.Embedding(num_items, dimension)
 
-        nn.init.xavier_uniform_(self.U.weight)
-        nn.init.xavier_uniform_(self.I.weight)
+        nn.init.xavier_normal_(self.U.weight)
+        nn.init.xavier_normal_(self.I.weight)
 
     def forward(self, user, item_i, item_j):
         user = self.U(user)
@@ -107,7 +107,7 @@ def metrics(model, data):
 
 
 if __name__ == '__main__':
-    dataset = 'cite'
+    dataset = 'xing'
     warm_train, warm_valid, warm_test = load_data(dataset)
     num_users = 5551 if dataset == 'cite' else 106881
     num_items = 16980 if dataset == 'cite' else 20519
@@ -116,32 +116,36 @@ if __name__ == '__main__':
     xing_train_dataset_loader = torch.utils.data.DataLoader(xing_train_dataset, batch_size=8192, shuffle=True)
     reg = 0.001
     lr = 0.002
-    epochs = 30
-    model = bpr(num_users, num_items, 1024)
+    epochs = 1000
+    model = bpr(num_users, num_items, 64)
     model.cuda()
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=0.001)
+    pre_loss = 100000
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=0.001)
     for i in range(epochs):
         t1 = time.time()
         model.train()
         loss_value = 0
         xing_train_dataset_loader.dataset.ng_sample()
         for user, item_i, item_j in xing_train_dataset_loader:
+            model.zero_grad()
             user = user.cuda()
             item_i = item_i.cuda()
             item_j = item_j.cuda()
             pred_i, pred_j = model(user, item_i, item_j)
-            model.zero_grad()
-            loss = -((pred_i - pred_j).sigmoid().log().sum() + 0.001 * (
-                        model.U.weight.norm() + model.I.weight.norm())).cpu()
-            loss_value = loss.cpu().item()
+            # print(pred_i)
+            loss = -(pred_i - pred_j).sigmoid().log().sum()
+            loss_value = loss.item()
             loss.backward()
             optimizer.step()
         with torch.no_grad():
             model.eval()
             recall, ndcg = metrics(model, warm_valid)
         print(f"Epoch: {i}, Recall: {recall}, NDCG: {ndcg}, Loss: {loss_value}, Time: {time.time() - t1:.2f}")
+        if np.abs(loss_value - pre_loss) < 0.1:
+            break
+        pre_loss = loss_value
 
     recall, ndcg = metrics(model, warm_test)
     print(f"Recall: {recall}, NDCG: {ndcg}")
 
-    torch.save(model.state_dict(), f'model/bpr_{dataset}.pth')
+    torch.save(model.state_dict(), f'model/bpr_{dataset}_1.pth')

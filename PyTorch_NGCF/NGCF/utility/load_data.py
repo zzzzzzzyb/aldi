@@ -14,10 +14,10 @@ class Data(object):
     def __init__(self, path, batch_size):
         if "xing" in path:
             self.dataset = "xing"
-            path = r"C:\zzzzzyb\course_files\fyp\aldi\data\NGCF_PATH"
+            path = r"/home/Master/ZhaoYB/projects/aldi/data/NGCF_PATH"
         elif "cite" in path:
             self.dataset = "cite"
-            path = r"C:\zzzzzyb\course_files\fyp\aldi\data\NGCF_PATH"
+            path = r"/home/Master/ZhaoYB/projects/aldi/data/NGCF_PATH"
         self.path = path
         self.batch_size = batch_size
 

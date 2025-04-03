@@ -16,7 +16,7 @@ from PyTorch_NGCF.NGCF.utility.load_data import Data
 
 
 class ALDIDataset(torch.utils.data.Dataset):
-    def __init__(self, features, num_item, dataset=None, num_ng=2, is_train=None, item_content=None):
+    def __init__(self, features, num_item, dataset=None, num_ng=1, is_train=None, item_content=None):
         super(ALDIDataset, self).__init__()
         self.features = features
         self.num_item = num_item
@@ -180,12 +180,12 @@ if __name__ == '__main__':
     num_users = 5551 if dataset == 'cite' else 106881
     num_items = 16980 if dataset == 'cite' else 20519
     if backbone == "bpr":
-        teacher = bpr(num_users, num_items, 1024)
+        teacher = bpr(num_users, num_items, recdim)
         state_dict = torch.load(f'model/bpr_{dataset}.pth', weights_only=True)
         teacher.load_state_dict(state_dict)
         teacher.cuda()
         teacher.eval()
-        student = student_model(num_users=num_users, embedding_dim=1024, dataset=dataset)
+        student = student_model(num_users=num_users, embedding_dim=recdim, dataset=dataset)
         student.cuda()
         student.U.weight.data.copy_(teacher.U.weight.data)
     elif backbone == "lightgcn":
@@ -250,9 +250,11 @@ if __name__ == '__main__':
             content_j = content_j.cuda()
             if backbone == "bpr":
                 teacher_pred_i, teacher_pred_j = teacher(user, item_i, item_j)
+                # print(teacher_pred_i)
             elif backbone == "lightgcn":
                 teacher_pred_i = teacher(user, item_i)
                 teacher_pred_j = teacher(user, item_j)
+                # print(teacher_pred_i.tolist())
             elif backbone == "ngcf":
                 ua_embeddings, ia_embeddings = teacher(adj)
                 user_embeddings = ua_embeddings[user]
@@ -294,7 +296,6 @@ if __name__ == '__main__':
             criterion = nn.BCEWithLogitsLoss(reduction='mean', pos_weight=w)
             loss4 = criterion(t_dist_i, s_dist_i.sigmoid())
 
-            # print(loss1, loss2, loss3, loss4)
             loss = loss1 + loss2 + loss3 + loss4
             loss.backward()
             loss_value.append(loss.item())
