@@ -73,28 +73,37 @@ def load_data(dataset):
         return warm_train, warm_valid, warm_test
 
 
-def metrics(model, data):
-    items = torch.tensor(list(set(data['item'])))
-    item_embedding = model.I(items.cuda()).cuda()
+def metrics(model, data, n_item, n_user):
+    items = torch.tensor([i for i in range(n_item)])
+    item_embedding = model.I(items)
+    users = torch.tensor([i for i in range(n_user)])
+    user_embedding = model.U(users)
     u_i_group = data.groupby('user')
 
-    def batch_iterate(df, batch_size):
-        for start in range(0, len(df), batch_size):
-            yield df.iloc[start:start + batch_size]
-
     recall_dict = {}
-    for user_item in batch_iterate(data, 2048):
-        users = user_item['user'].tolist()
-        user_item.reset_index(drop=True, inplace=True)
-        users = model.U(torch.tensor(users).cuda()).cuda()
-        pred = (users @ item_embedding.transpose(0, 1))
-        topks = torch.topk(pred, k=20)[1]
-        pred_items = torch.take(items.cpu(), topks.cpu()).cpu().tolist()
-        for i in range(len(user_item)):
-            if user_item.iloc[i]['item'] in pred_items[i]:
-                tmp = recall_dict.get(user_item.iloc[i]['user'], [])
-                tmp.append(pred_items[i].index(user_item.iloc[i]['item']))
-                recall_dict[user_item.iloc[i]['user']] = tmp
+    preds = user_embedding @ item_embedding.transpose(0, 1)
+    topks = torch.topk(preds, k=20)[1]
+    pred_items = torch.take(items.cpu(), topks.cpu()).cpu()
+    for row in data.itertuples():
+        if row.item in pred_items[row.user]:
+            tmp = recall_dict.get(row.user, [])
+            tmp.append(pred_items[row.user].tolist().index(row.item))
+            recall_dict[row.user] = tmp
+    # print(recall_dict)
+    recall = []
+    ndcg = []
+    for user in list(set(data['user'])):
+        try:
+            lsts = recall_dict[user]
+        except:
+            recall.append(0.0)
+            ndcg.append(0.0)
+            continue
+        recall.append(len(lsts) / len(u_i_group.get_group(user)))
+        idcg = np.reciprocal(np.log2(np.arange(len(lsts)).astype(float) + 2)).sum()
+        dcg = np.reciprocal(np.log2(np.array(lsts, dtype=float) + 2)).sum()
+        ndcg.append(dcg / idcg)
+    return np.mean(recall), np.mean(ndcg)
 
     recall = []
     ndcg = []
@@ -115,8 +124,8 @@ if __name__ == '__main__':
                                     is_train=True)
     xing_train_dataset_loader = torch.utils.data.DataLoader(xing_train_dataset, batch_size=8192, shuffle=True)
     reg = 0.001
-    lr = 0.002
-    epochs = 1000
+    lr = 0.0005
+    epochs = 120
     model = bpr(num_users, num_items, 64)
     model.cuda()
     pre_loss = 100000
@@ -139,13 +148,13 @@ if __name__ == '__main__':
             optimizer.step()
         with torch.no_grad():
             model.eval()
-            recall, ndcg = metrics(model, warm_valid)
+            recall, ndcg = metrics(model, warm_valid, num_items, num_users)
         print(f"Epoch: {i}, Recall: {recall}, NDCG: {ndcg}, Loss: {loss_value}, Time: {time.time() - t1:.2f}")
-        if np.abs(loss_value - pre_loss) < 0.1:
+        if np.abs(loss_value - pre_loss) < 0.01:
             break
         pre_loss = loss_value
 
-    recall, ndcg = metrics(model, warm_test)
+    recall, ndcg = metrics(model, warm_test, num_items, num_users)
     print(f"Recall: {recall}, NDCG: {ndcg}")
 
-    torch.save(model.state_dict(), f'model/bpr_{dataset}_1.pth')
+    torch.save(model.state_dict(), f'model/bpr_{dataset}.pth')

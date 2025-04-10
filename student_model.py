@@ -230,7 +230,7 @@ if __name__ == '__main__':
     epochs = 150
     reg = 0.001
     omega = -4
-    optimizer = torch.optim.SGD(student.parameters(), lr=lr, weight_decay=wd)
+    optimizer = torch.optim.Adam(student.parameters(), lr=lr, weight_decay=wd)
     i_u_group = warm_train.groupby('item')
     i_map_u = [0] * num_items
     for i in list(i_u_group.groups.keys()):
@@ -303,9 +303,12 @@ if __name__ == '__main__':
         with torch.no_grad():
             student.eval()
             recall, ndcg = metrics(student, cold_valid, item_content)
-        print(f"Epoch: {i}, Recall: {recall}, NDCG: {ndcg}, Loss: {np.mean(loss_value)}, Time: {time.time() - t1:.2f}")
+        with open(f'./log/{backbone}_student_{dataset}_train.log', 'a') as f:
+            f.write(f"Epoch: {i}, Recall: {recall}, NDCG: {ndcg}, Loss: {np.mean(loss_value)}, Time: {time.time() - t1:.2f}\n")
 
     recall, ndcg = metrics(student, cold_test, item_content)
-    print(f"Recall: {recall}, NDCG: {ndcg}")
+    with open(f'./log/{backbone}_student_{dataset}_train.log', 'a') as f:
+        f.write('Test on cold:\n')
+        f.write(f"Recall: {recall}, NDCG: {ndcg}")
 
     torch.save(student.state_dict(), f'model/student_{backbone}_{dataset}.pth')
